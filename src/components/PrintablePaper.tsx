@@ -24,9 +24,9 @@ export const PrintablePaper: React.FC<PrintablePaperProps> = ({
           </div>
         </div>
 
-        <h1 className="text-2xl font-serif font-bold text-center uppercase tracking-wider mb-2">
+        <div className="text-2xl font-serif font-bold text-center uppercase tracking-wider mb-2">
           {paper.subject || 'Examination Paper'}
-        </h1>
+        </div>
         <div className="text-center text-sm font-serif italic mb-6">
           Level: {paper.level || 'Standard'} &bull; Duration: {paper.durationMinutes} minutes &bull; Maximum Marks: {paper.totalMarks}
         </div>

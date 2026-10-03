@@ -10,3 +10,5 @@ This document records decisions made during the autonomous build of Setu, with r
 | Pure client-side PDF, DOCX, and OCR processing | Fulfills no-backend, browser-only requirement (pdfjs-dist, mammoth, tesseract.js) |
 | Standardized SetuLogo component using supplied brand asset | Respects strict brand guideline to never redraw, recolor or stretch the supplied logo |
 | Pre-packaged tesseract assets in public/tesseract | Guarantees OCR worker, core WASM, and language traineddata run 100% locally with zero external network requests |
+| Retry transient model failures and malformed JSON up to three times | Hosted models can briefly be saturated and local models can emit incomplete structured output; permanent configuration failures still stop immediately |
+| Use adaptive request budgets and serial syllabus batches | Configuration values are ceilings; simple requests use compact context/output budgets while only complex cases need larger completions, reducing load on selected model endpoints |

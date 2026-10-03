@@ -19,6 +19,12 @@ const config: Config = {
           DEFAULT: 'var(--coral)',
           deep: 'var(--coral-deep)',
         },
+        violet: {
+          DEFAULT: 'var(--violet)',
+          deep: 'var(--violet-deep)',
+        },
+        sun: 'var(--sun)',
+        sky: 'var(--sky)',
       },
       fontFamily: {
         serif: ['Fraunces', 'Georgia', 'serif'],
@@ -34,13 +40,13 @@ const config: Config = {
         container: '1180px',
       },
       borderRadius: {
-        DEFAULT: '2px',
-        sm: '1px',
-        md: '2px',
-        lg: '4px',
+        DEFAULT: '12px',
+        sm: '8px',
+        md: '14px',
+        lg: '20px',
       },
       boxShadow: {
-        subtle: '0 1px 2px rgba(20, 32, 26, 0.04)',
+        subtle: '0 8px 24px rgba(31, 46, 84, 0.08)',
       },
     },
   },

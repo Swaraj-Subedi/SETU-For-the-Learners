@@ -31,7 +31,7 @@ export function Segmented<T extends string>({
       <div
         role="radiogroup"
         aria-label={label || name}
-        className="flex flex-wrap gap-1.5 p-1 bg-paper/80 border border-sage/40 rounded-sm"
+        className="flex flex-wrap gap-1.5 p-1.5 bg-white/70 border border-violet/15 rounded-md shadow-subtle"
       >
         {options.map((opt) => {
           const isSelected = opt.value === value;
@@ -44,8 +44,8 @@ export function Segmented<T extends string>({
               onClick={() => onChange(opt.value)}
               className={`flex-1 min-w-[90px] py-2 px-3 text-center rounded-sm transition-all text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-1 select-none ${
                 isSelected
-                  ? 'bg-ink text-ivory shadow-subtle'
-                  : 'text-ink-soft hover:text-ink hover:bg-sage/15'
+                  ? 'bg-violet text-white shadow-subtle'
+                  : 'text-ink-soft hover:text-ink hover:bg-sky/10'
               }`}
             >
               <div>{opt.label}</div>

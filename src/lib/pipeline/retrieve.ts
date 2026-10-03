@@ -78,7 +78,15 @@ export function retrieve(
   topK = 4
 ): FileChunk[] {
   if (chunks.length === 0) return [];
+  if (tokenize(query).length === 0) return [];
   const index = buildIndex(chunks);
   const results = score(index, query, 1.5, 0.75);
-  return results.slice(0, topK).map(([docIdx]) => chunks[docIdx]).filter(Boolean) as FileChunk[];
+  if (results.length > 0) {
+    return results.slice(0, topK).map(([docIdx]) => chunks[docIdx]).filter(Boolean) as FileChunk[];
+  }
+
+  // Internal syllabus IDs (for example topic_1_2) are not words in a note.
+  // Returning a bounded fallback is safer than sending an empty material block
+  // to the model, which invites it to invent a question from general knowledge.
+  return chunks.slice(0, topK);
 }

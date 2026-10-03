@@ -4,6 +4,7 @@ import type {
   AssessmentStyle,
   DifficultyLevel,
   QuestionType,
+  QuestionPlanItem,
   LLMConfig,
   PipelineStage,
   GeneratedPaper,
@@ -13,22 +14,32 @@ export interface PaperSettings {
   subject: string;
   level: string;
   style: AssessmentStyle;
+  customStyleName?: string;
+  assessmentInstructions?: string;
   difficulty: DifficultyLevel;
   questionCount: number;
   durationMinutes: number;
   totalMarks: number;
   questionTypes: QuestionType[];
+  questionPlan?: QuestionPlanItem[];
 }
 
 export const DEFAULT_SETTINGS: PaperSettings = {
   subject: '',
   level: '',
   style: 'class_test',
+  customStyleName: 'Custom assessment',
+  assessmentInstructions: '',
   difficulty: 'balanced',
   questionCount: 10,
   durationMinutes: 45,
   totalMarks: 30,
   questionTypes: ['mcq', 'short', 'application'],
+  questionPlan: [
+    { type: 'mcq', count: 3, marksPerQuestion: 1 },
+    { type: 'short', count: 4, marksPerQuestion: 3 },
+    { type: 'application', count: 3, marksPerQuestion: 5 },
+  ],
 };
 
 export const DEFAULT_LLM_CONFIG: LLMConfig = {
@@ -38,7 +49,11 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   openaiAddress: 'http://localhost:1234/v1',
   openaiModel: 'default',
   geminiApiKey: '',
-  geminiModel: 'gemini-1.5-flash',
+  geminiModel: 'gemini-3.8-flash',
+  // These are ceilings. The pipeline automatically uses smaller budgets for
+  // simple requests and increases them only for complex question types.
+  maxOutputTokens: 2048,
+  maxContextTokens: 1200,
 };
 
 export interface SessionState {
@@ -136,9 +151,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })),
 
   updateSettings: (newSettings) =>
-    set((state) => ({
-      settings: { ...state.settings, ...newSettings },
-    })),
+    set((state) => {
+      const settings = { ...state.settings, ...newSettings };
+      if (newSettings.questionPlan) {
+        const plan = newSettings.questionPlan.filter((item) => item.count > 0 && item.marksPerQuestion > 0);
+        settings.questionPlan = plan;
+        settings.questionTypes = plan.map((item) => item.type);
+        settings.questionCount = plan.reduce((sum, item) => sum + item.count, 0);
+        settings.totalMarks = plan.reduce((sum, item) => sum + item.count * item.marksPerQuestion, 0);
+      }
+      return { settings };
+    }),
 
   updateLLMConfig: (config) =>
     set((state) => ({

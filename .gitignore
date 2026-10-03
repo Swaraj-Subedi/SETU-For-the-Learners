@@ -22,8 +22,18 @@ blob-report/
 playwright/.cache/
 
 # Environment files
+.env
 .env.local
 .env.*.local
+!.env.example
+
+# Local tooling output
+coverage/
+*.tsbuildinfo
+/.vite/
+
+# Ad-hoc local screenshots
+/home-*.png
 
 # OS files
 .DS_Store

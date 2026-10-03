@@ -108,6 +108,24 @@ export function buildBlueprint(
 ): Blueprint {
   const { questionCount, totalMarks, difficulty, questionTypes } = settings;
 
+  // A user-authored plan is authoritative: its counts and marks are copied
+  // exactly into the model blueprint rather than merely displayed in the UI.
+  const plan = settings.questionPlan?.filter((item) => item.count > 0 && item.marksPerQuestion > 0);
+  if (plan && plan.length > 0) {
+    const plannedCount = plan.reduce((sum, item) => sum + item.count, 0);
+    const plannedMarks = plan.reduce((sum, item) => sum + item.count * item.marksPerQuestion, 0);
+    const topicAssignment = spreadTopics(syllabusMap, plannedCount);
+    const typeAssignment = plan.flatMap((item) => Array.from({ length: item.count }, () => item));
+    const slots = typeAssignment.map((item, index) => ({
+      slot_id: `slot_${index + 1}`,
+      type: item.type,
+      marks: item.marksPerQuestion,
+      difficulty: rotateDifficulty(index, DIFFICULTY_DIST[difficulty], plannedCount),
+      topic_id: topicAssignment[index] ?? 'topic_general',
+    }));
+    return { slots: assignSections(slots), totalMarks: plannedMarks };
+  }
+
   // Limit types to what's feasible
   const usableTypes = questionTypes.slice(0, questionCount);
   if (usableTypes.length === 0) throw new Error('No question types selected');
@@ -125,36 +143,36 @@ export function buildBlueprint(
   const basePer = typeAssignment.map((t) => TYPE_MARKS[t]);
   const baseSum = basePer.reduce((a, b) => a + b, 0);
 
-  // Scale marks proportionally then fix rounding with the last slot
-  let marks: number[];
-  if (baseSum === 0) {
-    marks = Array(questionCount).fill(1) as number[];
-  } else {
-    const scale = totalMarks / baseSum;
-    marks = basePer.map((m) => Math.max(1, Math.round(m * scale)));
-    // Fix total to be exact
-    const diff_ = totalMarks - marks.reduce((a, b) => a + b, 0);
-    marks[marks.length - 1] = Math.max(1, (marks[marks.length - 1] ?? 1) + diff_);
+  // Allocate marks using integer distribution ensuring sum === totalMarks and all marks >= 1
+  const effectiveTotal = Math.max(totalMarks, questionCount);
+  const remainingToDistribute = effectiveTotal - questionCount; // 1 mark minimum guaranteed
+  const weights = basePer.map((m) => (baseSum > 0 ? m / baseSum : 1 / questionCount));
+
+  // Largest remainder allocation
+  const rawFloats = weights.map((w) => w * remainingToDistribute);
+  const baseAllocations = rawFloats.map((f) => Math.floor(f));
+  const allocated = baseAllocations.reduce((a, b) => a + b, 0);
+  const remainder = remainingToDistribute - allocated;
+
+  const remainders = rawFloats.map((f, idx) => ({ idx, rem: f - Math.floor(f) }));
+  remainders.sort((a, b) => b.rem - a.rem);
+
+  for (let i = 0; i < remainder; i++) {
+    baseAllocations[remainders[i].idx]++;
   }
+
+  const finalMarks = baseAllocations.map((a) => a + 1); // add back the guaranteed 1 mark
 
   const slots: Omit<BlueprintSlot, 'section'>[] = Array.from(
     { length: questionCount },
     (_, i) => ({
       slot_id: `slot_${i + 1}`,
       type: typeAssignment[i],
-      marks: marks[i] ?? 1,
+      marks: finalMarks[i],
       difficulty: rotateDifficulty(i, diffDist, questionCount),
       topic_id: topicAssignment[i] ?? 'topic_general',
     })
   );
-
-  // Final safety: verify exact total
-  const computedTotal = slots.reduce((s, sl) => s + sl.marks, 0);
-  if (computedTotal !== totalMarks) {
-    const delta = totalMarks - computedTotal;
-    const last = slots[slots.length - 1];
-    if (last) last.marks = Math.max(1, last.marks + delta);
-  }
 
   return {
     slots: assignSections(slots),

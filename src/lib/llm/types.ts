@@ -5,6 +5,7 @@ export interface LLMOptions {
   temperature?: number;
   seed?: number;
   numCtx?: number;
+  maxTokens?: number;
   signal?: AbortSignal;
 }
 
@@ -23,7 +24,9 @@ export class LLMError extends Error {
   constructor(
     public readonly code: LLMErrorCode,
     message: string,
-    public readonly cause?: unknown
+    public readonly cause?: unknown,
+    /** Whether retrying the same request is likely to succeed. */
+    public readonly retryable = false
   ) {
     super(message);
     this.name = 'LLMError';

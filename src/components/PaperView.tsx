@@ -7,7 +7,7 @@ import { Notice } from './Notice';
 import { runPipeline } from '@/lib/pipeline/run';
 import { retrieve } from '@/lib/pipeline/retrieve';
 import { generateQuestion } from '@/lib/pipeline/generate';
-import { validateQuestion, assembleQuestion } from '@/lib/pipeline/validate';
+import { validateQuestion, assembleQuestion, repairQuestionForSlot } from '@/lib/pipeline/validate';
 import { createOllamaClient } from '@/lib/llm/ollama';
 import { createOpenAICompatClient } from '@/lib/llm/openaiCompat';
 import { createGeminiClient } from '@/lib/llm/gemini';
@@ -85,11 +85,24 @@ export const PaperView: React.FC = () => {
         difficulty: q.difficulty,
         topic_id: q.topic_id,
       };
-      const contextChunks = retrieve(`${q.topic_id} ${q.type}`, allChunks, 6);
+      const questionSourceChunks = studyMaterials.length > 0
+        ? studyMaterials.flatMap((file) => file.chunks)
+        : syllabus?.chunks ?? [];
+      // A paper does not retain the private syllabus map. The old topic ID
+      // (for example "topic_1_2") is not meaningful to BM25, so use the
+      // actual question wording to recover relevant source material.
+      const contextChunks = retrieve(`${q.stem} ${q.type}`, questionSourceChunks, 6);
       const existingStems = paper.questions.filter((x) => x.id !== questionId).map((x) => x.stem);
 
       const qOutput = await generateQuestion(slot, {
         units: [], weightInferred: true,
+      }, {
+        subject: settings.subject,
+        academicLevel: settings.level,
+        assessmentStyle: settings.style === 'custom' ? settings.customStyleName ?? 'Custom assessment' : settings.style.replace(/_/g, ' '),
+        assessmentInstructions: settings.assessmentInstructions,
+        maxContextTokens: llmConfig.maxContextTokens,
+        maxOutputTokens: llmConfig.maxOutputTokens,
       }, contextChunks, existingStems, llm);
 
       if (!qOutput) {
@@ -97,12 +110,14 @@ export const PaperView: React.FC = () => {
         return;
       }
 
-      const validation = validateQuestion(qOutput, slot, allChunks, paper.questions.filter((x) => x.id !== questionId).map((x) => ({ ...x, topic_id: x.topic_id, stem: x.stem } as import('@/lib/pipeline/schemas').QuestionOutput)));
+      const repaired = repairQuestionForSlot(qOutput, slot, contextChunks.length > 0 ? contextChunks : questionSourceChunks);
+      const validation = validateQuestion(repaired, slot, questionSourceChunks, paper.questions.filter((x) => x.id !== questionId).map((x) => ({ ...x, topic_id: x.topic_id, stem: x.stem } as import('@/lib/pipeline/schemas').QuestionOutput)));
       if (!validation.ok) {
-        // Use it anyway if it at least has valid marks
+        setRegenError(validation.errors[0] ?? 'Could not generate a replacement question. Try again.');
+        return;
       }
 
-      const updated = assembleQuestion(qOutput, slot, questionId);
+      const updated = assembleQuestion(repaired, slot, questionId);
       updateQuestionInPaper(updated);
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : 'Regeneration failed');
@@ -162,7 +177,7 @@ export const PaperView: React.FC = () => {
                 Practice Paper
               </span>
               <span className="text-xs tabular-nums text-ink-soft">
-                {paper.durationMinutes} mins &bull; {paper.totalMarks} marks
+                {paper.durationMinutes} mins • {paper.totalMarks} marks
               </span>
             </div>
 
@@ -172,7 +187,7 @@ export const PaperView: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
               <span>Level: {paper.level}</span>
-              <span>&bull;</span>
+              <span>•</span>
               <span>Style: {paper.style.replace(/_/g, ' ')}</span>
             </div>
 

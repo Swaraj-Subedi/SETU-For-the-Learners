@@ -95,8 +95,8 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
               key={item.type}
               className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition-all select-none ${
                 isChecked
-                  ? 'bg-paper border-ink shadow-subtle'
-                  : 'bg-paper/40 border-sage/40 hover:border-sage/80'
+                  ? 'bg-gradient-to-br from-violet/10 to-sky/10 border-violet/60 shadow-subtle'
+                  : 'bg-white/50 border-sage/35 hover:border-sky/70 hover:bg-sky/5'
               }`}
             >
               <input

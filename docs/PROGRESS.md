@@ -1,8 +1,7 @@
 # Build Progress
 
 ## Current State
-Phase 0, 1, and 2 completed and fully verified.
-Phase 3 (Model Layer) and Phase 4 (Generation Pipeline) in progress.
+Phases 0–4 are completed and verified.
 
 ## Completed
 - **Phase 0 — Scaffold**:
@@ -31,18 +30,13 @@ Phase 3 (Model Layer) and Phase 4 (Generation Pipeline) in progress.
   - `src/lib/files/chunk.ts`: 600–800 token chunking with ~100 token overlap and metadata preservation.
   - Full memory-only Zustand store (`src/store/session.ts`) with instantaneous `clearEverything()`.
 
-## Next
-- **Phase 3 — Model Layer**:
-  - `LLMClient` interface with providers: Ollama, OpenAI-compatible (LM Studio/LocalAI), Gemini (memory-only key), and Deterministic Mock.
-  - JSON Schema output structuring and robust repair/retry logic.
-  - Connection testing and PowerShell setup guidance.
-- **Phase 4 — Generation Pipeline**:
-  - Syllabus mapping (units, topics, learning outcomes, weights).
-  - Deterministic blueprint solver for exact total marks arithmetic.
-  - In-browser BM25 vectorless retrieval.
-  - Single-slot generation, schema validation, citation/evidence verification, and deduplication.
-  - Critic evaluation and deterministic rebalancing.
-  - Processing screen stage announcements and abort control.
+## Completed model and generation workflow
+- Ollama is the default private provider at `http://localhost:11434` with `qwen3:4b`; OpenAI-compatible, Gemini, and deterministic mock providers are also available.
+- The pipeline maps the syllabus, builds an exact-marks blueprint, retrieves local source text, generates and validates questions, evaluates quality, and rebalances only when a model cannot fill a slot.
+- Generation has cancellation, processing-stage feedback, answer-reveal gating, printable output, and a deterministic mock path for repeatable browser tests.
+- Provider resilience was hardened: temporary capacity failures retry automatically, malformed JSON receives fresh completions, and errors no longer expose raw model output. Request budgets are adaptive (rather than applying a 3,072/1,800 ceiling to every request), and regeneration retrieves source material from the current question wording rather than an opaque topic identifier.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e`, and `npm run build` are the supported verification commands.
 
 ## Known Issues
-- None. All 23 unit tests and 10 Playwright e2e/axe tests pass.
+- The application’s production dependency audit is clean (`npm audit --omit=dev` reports zero vulnerabilities).
+- The full development-tooling audit still reports advisories in the current Vite 5, Vitest 2, and Tailwind 3 toolchain. Their available fixes are coordinated major-version upgrades, so they should be handled as a dedicated build-tool migration rather than through a forced audit fix.

@@ -22,7 +22,10 @@
   }
 
   body {
-    background-color: var(--ivory);
+    background:
+      radial-gradient(circle at 6% 2%, rgba(255, 191, 71, 0.28), transparent 22rem),
+      radial-gradient(circle at 94% 7%, rgba(90, 156, 255, 0.22), transparent 26rem),
+      var(--ivory);
     color: var(--ink);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 16px;
@@ -94,11 +97,14 @@
 .btn-primary {
   position: relative;
   overflow: hidden;
-  transition: transform 120ms ease, background-color 120ms ease;
+  background: linear-gradient(135deg, var(--violet), #9b5de5 60%, var(--coral));
+  box-shadow: 0 10px 20px rgba(112, 72, 232, 0.25);
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 14px 28px rgba(112, 72, 232, 0.34);
 }
 
 .btn-primary::after {
@@ -108,7 +114,7 @@
   left: 0;
   width: 100%;
   height: 2px;
-  background-color: var(--coral);
+  background-color: var(--sun);
   transform: scaleX(0);
   transform-origin: bottom left;
   transition: transform 180ms ease;
@@ -121,5 +127,58 @@
 /* Subtle line rule */
 .rule-subtle {
   border: 0;
-  border-top: 1px solid rgba(169, 184, 163, 0.6);
+  border-top: 1px solid rgba(87, 199, 193, 0.32);
+}
+
+/* App-specific surface language: colorful but restrained, with clear depth. */
+.app-header {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px);
+  border-color: rgba(112, 72, 232, 0.14) !important;
+}
+
+.app-main {
+  position: relative;
+}
+
+.setup-section {
+  position: relative;
+  padding: 1.5rem;
+  border: 1px solid rgba(23, 34, 59, 0.06);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 10px 28px rgba(31, 46, 84, 0.045);
+}
+
+.setup-section::before {
+  content: '';
+  position: absolute;
+  top: 1.25rem;
+  bottom: 1.25rem;
+  left: 0;
+  width: 4px;
+  border-radius: 0 999px 999px 0;
+  background: var(--violet);
+}
+
+.setup-section--materials::before { background: var(--sky); }
+.setup-section--subject::before { background: var(--coral); }
+.setup-section--paper::before { background: var(--sage); }
+
+.setup-section h1 {
+  background: linear-gradient(100deg, var(--ink), var(--violet-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.launch-panel {
+  border-radius: 20px;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(115deg, rgba(112, 72, 232, 0.11), rgba(87, 199, 193, 0.13), rgba(255, 191, 71, 0.15));
+  border: 1px solid rgba(112, 72, 232, 0.16);
+}
+
+input, textarea {
+  border-radius: 10px !important;
 }

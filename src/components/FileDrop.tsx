@@ -77,10 +77,10 @@ export const FileDrop: React.FC<FileDropProps> = ({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className={`relative border border-dashed rounded-sm p-8 sm:p-12 text-center transition-colors cursor-pointer focus-within:ring-2 focus-within:ring-ink ${
+        className={`relative overflow-hidden border-2 border-dashed rounded-lg p-8 sm:p-12 text-center transition-all cursor-pointer focus-within:ring-2 focus-within:ring-violet ${
           isDragOver
-            ? 'bg-sage/20 border-sage-ink'
-            : 'bg-paper/50 hover:bg-paper border-sage/60 hover:border-ink/60'
+            ? 'bg-sky/15 border-sky scale-[1.01]'
+            : 'bg-white/60 hover:bg-white border-violet/25 hover:border-violet hover:shadow-subtle'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <p className="text-base sm:text-lg font-serif text-ink mb-2">

@@ -51,10 +51,10 @@ if (fs.existsSync(trainedDataSrc)) {
 }
 
 // 4. Copy PDF.js worker
-const pdfWorkerSrc = path.join(rootDir, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.js');
+const pdfWorkerSrc = path.join(rootDir, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
 if (fs.existsSync(pdfWorkerSrc)) {
-  fs.copyFileSync(pdfWorkerSrc, path.join(pdfjsTargetDir, 'pdf.worker.min.js'));
-  console.log('Copied pdf.worker.min.js');
+  fs.copyFileSync(pdfWorkerSrc, path.join(pdfjsTargetDir, 'pdf.worker.min.mjs'));
+  console.log('Copied pdf.worker.min.mjs');
 }
 
 console.log('Asset copying complete.');

@@ -24,7 +24,7 @@ export function cleanExtractedText(rawText: string): string {
       const trimmed = line.trim();
       if (!trimmed) return true;
       // Filter out isolated page numbering: "Page 1", "12 / 40", "[ 3 ]"
-      if (/^(page\s+\d+(\s+of\s+\d+)?|\d+|\-\s*\d+\s*\-)$/i.test(trimmed)) {
+      if (/^(page\s+\d+(\s+of\s+\d+)?|\d+|-\s*\d+\s*-)$/i.test(trimmed)) {
         return false;
       }
       return true;

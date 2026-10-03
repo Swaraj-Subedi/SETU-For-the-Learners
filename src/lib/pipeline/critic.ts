@@ -4,7 +4,7 @@ import type { LLMClient } from '../llm/types';
 
 const VERSION = 'v1.0';
 
-function buildCriticPrompt(q: QuestionOutput, contextText: string): string {
+function buildCriticPrompt(q: QuestionOutput, contextText: string, academicLevel: string): string {
   return `${VERSION} TASK: Score the following exam question on 5 dimensions (1=poor, 5=excellent).
 
 DIMENSIONS:
@@ -15,6 +15,7 @@ DIMENSIONS:
 - rubric_quality: Is the marking scheme fair and comprehensive?
 
 QUESTION:
+academic level: "${academicLevel}"
 stem: "${q.stem}"
 type: "${String(q.difficulty)} / ${q.marks} marks"
 model_answer: "${q.model_answer.slice(0, 200)}"
@@ -32,10 +33,11 @@ export async function criticScore(
   q: QuestionOutput,
   contextChunks: string[],
   llm: LLMClient,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  academicLevel = 'the stated academic level'
 ): Promise<CriticScore> {
   const contextText = contextChunks.join('\n\n---\n\n');
-  const prompt = buildCriticPrompt(q, contextText);
+  const prompt = buildCriticPrompt(q, contextText, academicLevel);
 
   try {
     return await llm.generate(prompt, CriticScoreSchema, 'CriticScore', {

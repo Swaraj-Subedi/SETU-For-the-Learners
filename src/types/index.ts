@@ -12,11 +12,18 @@ export type AssessmentStyle =
   | 'mid_term'
   | 'final_exam'
   | 'quick_revision'
-  | 'entrance';
+  | 'entrance'
+  | 'custom';
 
 export type DifficultyLevel = 'easy' | 'balanced' | 'hard' | 'mixed';
 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface QuestionPlanItem {
+  type: QuestionType;
+  count: number;
+  marksPerQuestion: number;
+}
 
 export interface FileChunk {
   id: string;
@@ -124,6 +131,10 @@ export interface LLMConfig {
   openaiModel: string;
   geminiApiKey: string;
   geminiModel: string;
+  /** Maximum completion tokens for each model request. */
+  maxOutputTokens: number;
+  /** Maximum note context supplied to a question, in approximate tokens. */
+  maxContextTokens: number;
 }
 
 export type PipelineStage =

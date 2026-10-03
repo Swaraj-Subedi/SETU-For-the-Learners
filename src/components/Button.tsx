@@ -17,7 +17,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    let baseStyles =
+    const baseStyles =
       'inline-flex items-center justify-center font-medium transition-colors select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2';
 
     let variantStyles = '';
@@ -25,7 +25,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (variant === 'primary') {
       variantStyles =
-        'bg-ink text-ivory rounded-sm shadow-subtle btn-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:transform-none';
+        'text-white rounded-md shadow-subtle btn-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:transform-none';
       sizeStyles =
         size === 'sm'
           ? 'h-9 px-4 text-sm'
@@ -34,7 +34,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             : 'h-12 px-6 text-sm tracking-wide';
     } else if (variant === 'secondary') {
       variantStyles =
-        'bg-paper text-ink border border-sage/60 hover:border-ink rounded-sm disabled:opacity-40 disabled:cursor-not-allowed';
+        'bg-white/90 text-ink border border-violet/20 hover:border-violet hover:bg-violet/5 rounded-md shadow-subtle disabled:opacity-40 disabled:cursor-not-allowed';
       sizeStyles =
         size === 'sm'
           ? 'h-8 px-3 text-xs'

@@ -7,9 +7,7 @@ import { analyseSyllabus } from './syllabus';
 import { buildBlueprint } from './blueprint';
 import { retrieve } from './retrieve';
 import { generateQuestion } from './generate';
-import { validateQuestion, assembleQuestion } from './validate';
-import { criticScore, criticPasses } from './critic';
-import { rebalance } from './rebalance';
+import { validateQuestion, assembleQuestion, repairQuestionForSlot } from './validate';
 import type { QuestionOutput, SyllabusMap } from './schemas';
 import { createOllamaClient } from '../llm/ollama';
 import { createOpenAICompatClient } from '../llm/openaiCompat';
@@ -91,6 +89,12 @@ function buildCoverageSentence(questions: ReturnType<typeof assembleQuestion>[],
   return `Covers ${covered} of ${totalUnits} units of your syllabus.`;
 }
 
+function topicQuery(map: SyllabusMap, topicId: string, questionType: string): string {
+  const topic = map.units.flatMap((unit) => unit.topics).find((item) => item.id === topicId);
+  // Topic titles and subtopics are present in the student's notes; opaque IDs are not.
+  return [topic?.title, ...(topic?.subtopics ?? []), questionType].filter(Boolean).join(' ');
+}
+
 export interface PipelineInput {
   syllabusChunks: FileChunk[];
   materialChunks: FileChunk[];
@@ -103,12 +107,18 @@ export interface PipelineInput {
 export async function runPipeline(input: PipelineInput): Promise<GeneratedPaper> {
   const { syllabusChunks, materialChunks, settings, llmConfig, signal, onStage } = input;
   const allChunks = [...syllabusChunks, ...materialChunks];
+  // Questions should be grounded in notes when notes exist. The syllabus maps
+  // scope, but must not crowd out the actual teaching material.
+  const questionSourceChunks = materialChunks.length > 0 ? materialChunks : syllabusChunks;
 
   const llm = createLLMClient(llmConfig, allChunks);
 
   // Stage 1: Analyse syllabus
   onStage?.('mapping', 'Mapping the topics');
-  const syllabusMap = await analyseSyllabus(syllabusChunks, llm, signal);
+  const syllabusMap = await analyseSyllabus(syllabusChunks, llm, signal, {
+    maxContextTokens: llmConfig.maxContextTokens,
+    maxOutputTokens: llmConfig.maxOutputTokens,
+  });
 
   // Stage 2: Blueprint (deterministic)
   const blueprint = buildBlueprint(settings, syllabusMap);
@@ -124,43 +134,54 @@ export async function runPipeline(input: PipelineInput): Promise<GeneratedPaper>
 
   let questionIndex = 0;
 
-  for (const slot of blueprint.slots) {
+  for (const [slotIndex, slot] of blueprint.slots.entries()) {
     if (signal?.aborted) throw new Error('Pipeline cancelled');
 
-    const contextChunks = retrieve(
-      `${slot.topic_id} ${slot.type}`,
-      allChunks,
-      6
-    );
+    onStage?.('drafting', `Drafting question ${slotIndex + 1} of ${settings.questionCount}`);
+    const contextChunks = retrieve(topicQuery(syllabusMap, slot.topic_id, slot.type), questionSourceChunks, 6);
+    let qOutput: QuestionOutput | null = null;
+    let lastErrors: string[] = [];
 
-    const qOutput = await generateQuestion(
-      slot,
-      syllabusMap,
-      contextChunks,
-      existingStems,
-      llm,
-      signal
-    );
+    // A single malformed model response used to silently remove a question.
+    // Retry once at the question level; JSON transport retries happen inside
+    // generateQuestion. This is much faster than a second model critic call.
+    for (let generationAttempt = 0; generationAttempt < 2; generationAttempt++) {
+      const candidate = await generateQuestion(
+        slot,
+        syllabusMap,
+        {
+          subject: settings.subject,
+          academicLevel: settings.level,
+          assessmentStyle: settings.style === 'custom' ? settings.customStyleName ?? 'Custom assessment' : settings.style.replace(/_/g, ' '),
+          assessmentInstructions: settings.assessmentInstructions,
+          maxContextTokens: llmConfig.maxContextTokens,
+          maxOutputTokens: llmConfig.maxOutputTokens,
+        },
+        contextChunks,
+        existingStems,
+        llm,
+        signal,
+        2,
+        lastErrors.join('; ')
+      );
+      if (!candidate) {
+        lastErrors = ['The model did not return valid JSON.'];
+        continue;
+      }
 
-    if (!qOutput) continue;
-
-    // Stage 4: Validate
-    const validation = validateQuestion(qOutput, slot, allChunks, filledOutputs);
-    if (!validation.ok) {
-      // One retry with adjusted prompt (skip for now — rebalance handles missing questions)
-      continue;
+      const repaired = repairQuestionForSlot(candidate, slot, contextChunks.length > 0 ? contextChunks : questionSourceChunks);
+      const validation = validateQuestion(repaired, slot, questionSourceChunks, filledOutputs);
+      if (validation.ok) {
+        qOutput = repaired;
+        break;
+      }
+      onStage?.('checking', `Correcting question ${slotIndex + 1} of ${settings.questionCount}`);
+      lastErrors = validation.errors;
     }
 
-    // Stage 5: Critic
-    onStage?.('checking', 'Checking coverage and marks');
-    const criticResult = await criticScore(
-      qOutput,
-      contextChunks.map((c) => c.text),
-      llm,
-      signal
-    );
-
-    if (!criticPasses(criticResult)) continue;
+    if (!qOutput) {
+      throw new Error(`Could not create question ${filledQuestions.length + 1} of ${settings.questionCount}. ${lastErrors[0] ?? 'Please try a model that supports JSON output.'}`);
+    }
 
     questionIndex++;
     const assembled = assembleQuestion(
@@ -173,17 +194,11 @@ export async function runPipeline(input: PipelineInput): Promise<GeneratedPaper>
     existingStems.push(qOutput.stem);
   }
 
-  // Stage 6: Rebalance
   onStage?.('setting', 'Setting the paper');
-  const { questions, notice, totalMarks } = rebalance(
-    filledQuestions,
-    settings.totalMarks,
-    settings.questionCount
-  );
-
-  if (questions.length === 0) {
-    throw new Error('Could not generate any valid questions from your material. Try adding more study notes or a different model.');
-  }
+  // Never disguise an incomplete paper by rescaling the surviving questions.
+  // A successful run always contains exactly the requested count and marks.
+  const questions = filledQuestions;
+  const totalMarks = settings.totalMarks;
 
   // Build paper
   const sections = buildSections(questions, slotsMap);
@@ -203,7 +218,6 @@ export async function runPipeline(input: PipelineInput): Promise<GeneratedPaper>
     instructions,
     sections,
     questions,
-    rebalancedNotice: notice,
   };
 
   return paper;

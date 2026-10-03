@@ -14,7 +14,7 @@ import { Processing } from '@/components/Processing';
 import { PaperView } from '@/components/PaperView';
 import { processFileIntake } from '@/lib/files/ingest';
 import { runPipeline } from '@/lib/pipeline/run';
-import type { AssessmentStyle, DifficultyLevel, QuestionType, IngestedFile } from '@/types';
+import type { AssessmentStyle, DifficultyLevel, QuestionType, IngestedFile, QuestionPlanItem } from '@/types';
 
 const LEVEL_SUGGESTIONS = [
   'Grade 10',
@@ -25,19 +25,17 @@ const LEVEL_SUGGESTIONS = [
 
 const STYLE_DEFAULTS: Record<
   AssessmentStyle,
-  { count: number; duration: number; marks: number; types: QuestionType[] }
+  { duration: number; plan: QuestionPlanItem[] }
 > = {
-  class_test: { count: 10, duration: 45, marks: 30, types: ['mcq', 'short', 'application'] },
-  mid_term: { count: 15, duration: 90, marks: 50, types: ['mcq', 'short', 'long', 'application'] },
-  final_exam: {
-    count: 20,
-    duration: 180,
-    marks: 100,
-    types: ['mcq', 'short', 'long', 'application', 'analytical', 'case_based'],
-  },
-  quick_revision: { count: 5, duration: 20, marks: 15, types: ['mcq', 'short'] },
-  entrance: { count: 30, duration: 60, marks: 60, types: ['mcq'] },
+  class_test: { duration: 45, plan: [{ type: 'mcq', count: 3, marksPerQuestion: 1 }, { type: 'short', count: 4, marksPerQuestion: 3 }, { type: 'application', count: 3, marksPerQuestion: 5 }] },
+  mid_term: { duration: 90, plan: [{ type: 'mcq', count: 4, marksPerQuestion: 1 }, { type: 'short', count: 4, marksPerQuestion: 2 }, { type: 'long', count: 4, marksPerQuestion: 5 }, { type: 'application', count: 3, marksPerQuestion: 6 }] },
+  final_exam: { duration: 180, plan: [{ type: 'mcq', count: 4, marksPerQuestion: 1 }, { type: 'short', count: 4, marksPerQuestion: 3 }, { type: 'long', count: 3, marksPerQuestion: 8 }, { type: 'application', count: 3, marksPerQuestion: 6 }, { type: 'analytical', count: 3, marksPerQuestion: 6 }, { type: 'case_based', count: 3, marksPerQuestion: 8 }] },
+  quick_revision: { duration: 20, plan: [{ type: 'mcq', count: 3, marksPerQuestion: 1 }, { type: 'short', count: 2, marksPerQuestion: 6 }] },
+  entrance: { duration: 60, plan: [{ type: 'mcq', count: 30, marksPerQuestion: 2 }] },
+  custom: { duration: 45, plan: [{ type: 'short', count: 5, marksPerQuestion: 3 }] },
 };
+
+const DEFAULT_MARKS: Record<QuestionType, number> = { mcq: 1, short: 3, long: 6, application: 5, analytical: 5, case_based: 8, exam_style: 5 };
 
 export const Home: React.FC = () => {
   const {
@@ -64,6 +62,41 @@ export const Home: React.FC = () => {
   const [isModelSheetOpen, setIsModelSheetOpen] = useState(false);
   const [syllabusError, setSyllabusError] = useState<string | null>(null);
 
+  const handleCreatePaper = async () => {
+    if (!canGenerate) return;
+
+    const controller = new AbortController();
+    setAbortController(controller);
+    setPipelineStage('reading', 'Reading your syllabus');
+
+    try {
+      const syllabusChunks = syllabus?.chunks ?? [];
+      const materialChunks = studyMaterials.flatMap((f) => f.chunks);
+
+      setPipelineStage('mapping', 'Mapping the topics');
+
+      const generated = await runPipeline({
+        syllabusChunks,
+        materialChunks,
+        settings,
+        llmConfig,
+        signal: controller.signal,
+        onStage: (stage, message) => {
+          setPipelineStage(stage as Parameters<typeof setPipelineStage>[0], message);
+        },
+      });
+
+      setPaper(generated);
+    } catch (err) {
+      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('cancelled') || err.message.includes('Pipeline cancelled'))) {
+        cancelPipeline();
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred.';
+      setPipelineStage('error', msg);
+    }
+  };
+
   // If paper is generated, show the Paper view
   if (paper) {
     return <PaperView />;
@@ -71,7 +104,7 @@ export const Home: React.FC = () => {
 
   // If pipeline is running, show the Processing screen
   if (pipelineStage !== 'idle' && pipelineStage !== 'done') {
-    return <Processing />;
+    return <Processing onRetry={handleCreatePaper} />;
   }
 
   // Handlers for file selection
@@ -124,14 +157,25 @@ export const Home: React.FC = () => {
   };
 
   const handleStyleChange = (style: AssessmentStyle) => {
+    if (style === 'custom') {
+      updateSettings({ style });
+      return;
+    }
     const defaults = STYLE_DEFAULTS[style];
     updateSettings({
       style,
-      questionCount: defaults.count,
       durationMinutes: defaults.duration,
-      totalMarks: defaults.marks,
-      questionTypes: defaults.types,
+      questionPlan: defaults.plan,
     });
+  };
+
+  // Presets are a starting point. Once the blueprint is edited, label the
+  // assessment honestly as Custom rather than leaving a misleading preset on.
+  const updatePlan = (nextPlan: QuestionPlanItem[]) => updateSettings({ style: 'custom', questionPlan: nextPlan });
+
+  const handleTypesChange = (types: QuestionType[]) => {
+    const existing = new Map((settings.questionPlan ?? []).map((item) => [item.type, item]));
+    updatePlan(types.map((type) => existing.get(type) ?? { type, count: 1, marksPerQuestion: DEFAULT_MARKS[type] }));
   };
 
   // Validation Checks
@@ -144,7 +188,7 @@ export const Home: React.FC = () => {
     settings.questionCount > 0 &&
     settings.totalMarks >= settings.questionCount &&
     settings.durationMinutes > 0 &&
-    settings.questionTypes.length > 0;
+    (settings.questionPlan?.length ?? 0) > 0;
 
   // Mock mode check
   const isMockMode = import.meta.env.VITE_ENABLE_MOCK === 'true';
@@ -164,47 +208,17 @@ export const Home: React.FC = () => {
     disabledReason = 'Connect a model to generate questions';
   }
 
-  // Gentle warnings for impossible combinations
-  const showTypeCountWarning = settings.questionTypes.length > settings.questionCount;
-  const showMarksWarning = settings.totalMarks < settings.questionCount;
   const showDurationWarning = settings.durationMinutes < settings.questionCount * 1.5;
 
-  const handleCreatePaper = async () => {
-    if (!canGenerate) return;
+  const assessmentOptions: Array<{ value: AssessmentStyle; label: string; sublabel: string }> = [
+    { value: 'class_test', label: 'Class test', sublabel: '10 Qs • 30 M' },
+    { value: 'mid_term', label: 'Mid-term', sublabel: '15 Qs • 50 M' },
+    { value: 'final_exam', label: 'Final exam', sublabel: '20 Qs • 100 M' },
+    { value: 'quick_revision', label: 'Quick revision', sublabel: '5 Qs • 15 M' },
+    { value: 'entrance', label: 'Entrance-style', sublabel: '30 Qs • 60 M' },
+    { value: 'custom', label: 'Custom', sublabel: `${settings.questionCount} Qs • ${settings.totalMarks} M` },
+  ];
 
-    const controller = new AbortController();
-    setAbortController(controller);
-    setPipelineStage('reading', 'Reading your syllabus');
-
-    try {
-      const syllabusChunks = syllabus?.chunks ?? [];
-      const materialChunks = studyMaterials.flatMap((f) => f.chunks);
-
-      setPipelineStage('mapping', 'Mapping the topics');
-
-      const paper = await runPipeline({
-        syllabusChunks,
-        materialChunks,
-        settings,
-        llmConfig,
-        signal: controller.signal,
-        onStage: (stage, message) => {
-          setPipelineStage(stage as Parameters<typeof setPipelineStage>[0], message);
-        },
-      });
-
-      setPaper(paper);
-    } catch (err) {
-      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('cancelled'))) {
-        cancelPipeline();
-        return;
-      }
-      const msg = err instanceof Error ? err.message : 'An unexpected error occurred.';
-      setPipelineStage('error', msg);
-      // Return to idle after showing error briefly
-      setTimeout(() => setPipelineStage('idle', ''), 4000);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-ivory text-ink flex flex-col justify-between selection:bg-sage/40">
@@ -257,13 +271,13 @@ export const Home: React.FC = () => {
       </header>
 
       {/* Main Content Area */}
-      <main id="main-content" className="max-w-container mx-auto w-full px-4 sm:px-8 py-10 sm:py-16 flex-1 animate-page-rise">
+      <main id="main-content" className="app-main max-w-container mx-auto w-full px-4 sm:px-8 py-10 sm:py-16 flex-1 animate-page-rise">
         <div className="space-y-16">
           {/* STEP 01: Syllabus (Required Hero) */}
           <section
             id="step-syllabus"
             aria-labelledby="step-01-heading"
-            className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
+            className="setup-section grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
           >
             <div className="md:sticky md:top-8 self-start">
               <span className="font-mono text-xs uppercase text-sage-ink font-semibold tracking-label block mb-1">
@@ -316,7 +330,7 @@ export const Home: React.FC = () => {
           <section
             id="step-material"
             aria-labelledby="step-02-heading"
-            className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
+            className="setup-section setup-section--materials grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
           >
             <div className="md:sticky md:top-8 self-start">
               <span className="font-mono text-xs uppercase text-sage-ink font-semibold tracking-label block mb-1">
@@ -365,7 +379,7 @@ export const Home: React.FC = () => {
           <section
             id="step-subject"
             aria-labelledby="step-03-heading"
-            className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
+            className="setup-section setup-section--subject grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
           >
             <div className="md:sticky md:top-8 self-start">
               <span className="font-mono text-xs uppercase text-sage-ink font-semibold tracking-label block mb-1">
@@ -403,7 +417,7 @@ export const Home: React.FC = () => {
           <section
             id="step-paper"
             aria-labelledby="step-04-heading"
-            className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
+            className="setup-section setup-section--paper grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 md:gap-12"
           >
             <div className="md:sticky md:top-8 self-start">
               <span className="font-mono text-xs uppercase text-sage-ink font-semibold tracking-label block mb-1">
@@ -419,14 +433,41 @@ export const Home: React.FC = () => {
                 label="Assessment style"
                 value={settings.style}
                 onChange={handleStyleChange}
-                options={[
-                  { value: 'class_test', label: 'Class test', sublabel: '10 Qs • 30 M' },
-                  { value: 'mid_term', label: 'Mid-term', sublabel: '15 Qs • 50 M' },
-                  { value: 'final_exam', label: 'Final exam', sublabel: '20 Qs • 100 M' },
-                  { value: 'quick_revision', label: 'Quick revision', sublabel: '5 Qs • 15 M' },
-                  { value: 'entrance', label: 'Entrance-style', sublabel: '30 Qs • 60 M' },
-                ]}
+                options={assessmentOptions}
               />
+
+              <div className="rounded-md border border-violet/15 bg-white/60 p-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-ink">Make this assessment your own</h3>
+                  <p className="text-xs text-ink-soft mt-1">Presets are only starting points. Edit the blueprint below, or describe a format the AI should follow.</p>
+                </div>
+                {settings.style === 'custom' && (
+                  <>
+                    <div aria-live="polite" className="inline-flex items-center rounded-full bg-violet/10 px-3 py-1 text-xs font-medium text-violet-deep">
+                      Custom format · {settings.questionCount} questions · {settings.totalMarks} marks · {settings.durationMinutes} min
+                    </div>
+                    <Field
+                      id="custom-style-name"
+                      label="Assessment name"
+                      value={settings.customStyleName ?? ''}
+                      onChange={(e) => updateSettings({ customStyleName: e.target.value })}
+                      placeholder="e.g. Weekly concept check"
+                    />
+                  </>
+                )}
+                <div>
+                  <label htmlFor="assessment-instructions" className="block text-xs uppercase font-medium tracking-label text-sage-ink mb-1.5">Style brief for the AI</label>
+                  <textarea
+                    id="assessment-instructions"
+                    rows={3}
+                    value={settings.assessmentInstructions ?? ''}
+                    onChange={(e) => updateSettings({ assessmentInstructions: e.target.value })}
+                    placeholder="e.g. Use a formal board-exam format. Include numerical problems, but no derivations."
+                    className="w-full bg-white px-3 py-2.5 text-sm text-ink border border-violet/20 focus:border-violet focus:outline-none placeholder:text-ink-soft/50 resize-y"
+                  />
+                  <p className="text-[11px] text-ink-soft mt-1">This instruction is included in every question-generation request.</p>
+                </div>
+              </div>
 
               {/* Difficulty */}
               <Segmented<DifficultyLevel>
@@ -442,21 +483,13 @@ export const Home: React.FC = () => {
                 ]}
               />
 
-              {/* Numeric Inputs: Questions, Duration, Marks */}
+              {/* Exact question blueprint */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div>
-                  <label htmlFor="input-questions" className="block text-xs uppercase font-medium tracking-label text-sage-ink mb-1.5 select-none">
-                    Questions
+                  <label className="block text-xs uppercase font-medium tracking-label text-sage-ink mb-1.5 select-none">
+                    Total questions
                   </label>
-                  <input
-                    id="input-questions"
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={settings.questionCount}
-                    onChange={(e) => updateSettings({ questionCount: parseInt(e.target.value) || 1 })}
-                    className="w-full bg-paper px-3 py-2 text-ink text-base rounded-sm border-b-2 border-sage/60 focus:border-ink focus:outline-none tabular-nums"
-                  />
+                  <div className="w-full bg-paper px-3 py-2 text-ink text-base rounded-sm border-b-2 border-sage/60 tabular-nums">{settings.questionCount}</div>
                 </div>
 
                 <div>
@@ -470,24 +503,16 @@ export const Home: React.FC = () => {
                     max={360}
                     step={5}
                     value={settings.durationMinutes}
-                    onChange={(e) => updateSettings({ durationMinutes: parseInt(e.target.value) || 10 })}
+                    onChange={(e) => updateSettings({ style: 'custom', durationMinutes: parseInt(e.target.value) || 10 })}
                     className="w-full bg-paper px-3 py-2 text-ink text-base rounded-sm border-b-2 border-sage/60 focus:border-ink focus:outline-none tabular-nums"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="input-marks" className="block text-xs uppercase font-medium tracking-label text-sage-ink mb-1.5 select-none">
+                  <label className="block text-xs uppercase font-medium tracking-label text-sage-ink mb-1.5 select-none">
                     Total marks
                   </label>
-                  <input
-                    id="input-marks"
-                    type="number"
-                    min={5}
-                    max={200}
-                    value={settings.totalMarks}
-                    onChange={(e) => updateSettings({ totalMarks: parseInt(e.target.value) || 10 })}
-                    className="w-full bg-paper px-3 py-2 text-ink text-base rounded-sm border-b-2 border-sage/60 focus:border-ink focus:outline-none tabular-nums"
-                  />
+                  <div className="w-full bg-paper px-3 py-2 text-ink text-base rounded-sm border-b-2 border-sage/60 tabular-nums">{settings.totalMarks}</div>
                 </div>
               </div>
 
@@ -495,21 +520,23 @@ export const Home: React.FC = () => {
               <MultiSelect
                 label="Question types"
                 selected={settings.questionTypes}
-                onChange={(types) => updateSettings({ questionTypes: types })}
+                onChange={handleTypesChange}
               />
 
-              {/* Gentle flags for impossible or difficult combinations */}
-              {showTypeCountWarning && (
-                <Notice variant="info">
-                  You selected {settings.questionTypes.length} question types, but only requested {settings.questionCount} questions. Some question types will be omitted in the blueprint.
-                </Notice>
-              )}
-
-              {showMarksWarning && (
-                <Notice variant="warning">
-                  Total marks ({settings.totalMarks}) is lower than the number of questions ({settings.questionCount}). Please adjust marks to allow at least 1 mark per question.
-                </Notice>
-              )}
+              <div className="border border-sage/40 rounded-sm overflow-hidden">
+                <div className="grid grid-cols-[1fr_84px_96px_76px] gap-2 bg-paper px-3 py-2 text-[10px] uppercase tracking-label text-sage-ink font-medium">
+                  <span>Question type</span><span>How many</span><span>Marks each</span><span>Total</span>
+                </div>
+                {(settings.questionPlan ?? []).map((item, index) => (
+                  <div key={item.type} className="grid grid-cols-[1fr_84px_96px_76px] gap-2 items-center px-3 py-2 border-t border-sage/30 text-xs">
+                    <span className="capitalize text-ink">{item.type.replace('_', ' ')}</span>
+                    <input aria-label={`${item.type} question count`} type="number" min={1} max={50} value={item.count} onChange={(e) => updatePlan((settings.questionPlan ?? []).map((entry, entryIndex) => entryIndex === index ? { ...entry, count: Math.max(1, parseInt(e.target.value, 10) || 1) } : entry))} className="w-full bg-paper px-2 py-1 border-b border-sage/60 focus:outline-none focus:border-ink tabular-nums" />
+                    <input aria-label={`${item.type} marks per question`} type="number" min={1} max={100} value={item.marksPerQuestion} onChange={(e) => updatePlan((settings.questionPlan ?? []).map((entry, entryIndex) => entryIndex === index ? { ...entry, marksPerQuestion: Math.max(1, parseInt(e.target.value, 10) || 1) } : entry))} className="w-full bg-paper px-2 py-1 border-b border-sage/60 focus:outline-none focus:border-ink tabular-nums" />
+                    <span className="tabular-nums text-sage-ink">{item.count * item.marksPerQuestion}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-ink-soft">This blueprint is sent directly to the model: it will create exactly these counts, marks, and question types.</p>
 
               {showDurationWarning && (
                 <Notice variant="info">
@@ -520,7 +547,7 @@ export const Home: React.FC = () => {
           </section>
 
           {/* Action Row */}
-          <div className="pt-6 border-t border-sage/60 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="launch-panel flex flex-col sm:flex-row sm:items-center justify-between gap-6">
             <p className="text-xs text-ink-soft leading-relaxed max-w-md">
               Your files are read inside your browser. Nothing is uploaded to Setu or saved anywhere. Close the tab and it is all gone.
             </p>

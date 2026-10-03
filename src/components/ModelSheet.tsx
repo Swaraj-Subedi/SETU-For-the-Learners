@@ -4,6 +4,7 @@ import { useSessionStore } from '@/store/session';
 import { Button } from './Button';
 import { Notice } from './Notice';
 import type { LLMProvider } from '@/types';
+import { normalizeGeminiModel } from '@/lib/llm/gemini';
 
 export interface ModelSheetProps {
   open: boolean;
@@ -25,10 +26,20 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
   const [openaiModel, setOpenaiModel] = useState(llmConfig.openaiModel);
   const [geminiApiKey, setGeminiApiKey] = useState(llmConfig.geminiApiKey);
   const [geminiModel, setGeminiModel] = useState(llmConfig.geminiModel);
+  const [maxOutputTokens, setMaxOutputTokens] = useState(llmConfig.maxOutputTokens);
+  const [maxContextTokens, setMaxContextTokens] = useState(llmConfig.maxContextTokens);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleSave = () => {
+    const connectionChanged =
+      provider !== llmConfig.provider ||
+      ollamaAddress !== llmConfig.ollamaAddress ||
+      ollamaModel !== llmConfig.ollamaModel ||
+      openaiAddress !== llmConfig.openaiAddress ||
+      openaiModel !== llmConfig.openaiModel ||
+      geminiApiKey !== llmConfig.geminiApiKey ||
+      geminiModel !== llmConfig.geminiModel;
     updateLLMConfig({
       provider,
       ollamaAddress,
@@ -37,7 +48,12 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
       openaiModel,
       geminiApiKey,
       geminiModel,
+      maxOutputTokens: Math.min(4096, Math.max(512, maxOutputTokens || 2048)),
+      maxContextTokens: Math.min(8192, Math.max(256, maxContextTokens || 1200)),
     });
+    // A successful test only applies to the exact endpoint, model and key
+    // that were tested. Do not allow generation against changed credentials.
+    if (connectionChanged) setModelConnection('untested', false);
     onOpenChange(false);
   };
 
@@ -54,6 +70,8 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
       openaiModel,
       geminiApiKey,
       geminiModel,
+      maxOutputTokens: Math.min(4096, Math.max(512, maxOutputTokens || 2048)),
+      maxContextTokens: Math.min(8192, Math.max(256, maxContextTokens || 1200)),
     });
 
     try {
@@ -106,6 +124,7 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
         if (!geminiApiKey.trim()) {
           throw new Error('Please enter your Gemini API key to test connection.');
         }
+        const selectedModel = normalizeGeminiModel(geminiModel);
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiApiKey.trim()}`,
           {
@@ -114,9 +133,23 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
           }
         );
         if (res.ok) {
+          const data = await res.json() as {
+            models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
+          };
+          const matchingModel = data.models?.find(
+            (item) => item.name && normalizeGeminiModel(item.name) === selectedModel
+          );
+          if (!matchingModel) {
+            throw new Error(`'${selectedModel}' is not available to this Gemini API key. Choose a model listed for your key.`);
+          }
+          if (!matchingModel.supportedGenerationMethods?.includes('generateContent')) {
+            throw new Error(`'${selectedModel}' cannot generate text content. Choose a Gemini Flash or Pro text model.`);
+          }
+          setGeminiModel(selectedModel);
+          updateLLMConfig({ geminiModel: selectedModel });
           setTestResult({
             success: true,
-            message: 'Gemini API key verified successfully.',
+            message: `Gemini is ready with '${selectedModel}'.`,
           });
           setModelConnection('connected', true);
         } else {
@@ -161,7 +194,7 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
             {/* Provider Selection */}
             <div className="space-y-4 mb-6">
               <span className="block text-xs uppercase font-medium tracking-label text-sage-ink">
-                Provider
+                Choose how to generate
               </span>
 
               <div className="space-y-2">
@@ -214,10 +247,28 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
                   />
                   <div>
                     <div className="text-xs font-semibold text-ink">
-                      Google Gemini (Own API key)
+                      Use your own API key
                     </div>
                     <div className="text-[11px] text-ink-soft mt-0.5">
-                      Fast cloud inference. Key kept in memory only, never saved.
+                      Connect a cloud model. Your key stays in memory only.
+                    </div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 bg-paper border border-sage/40 rounded-sm cursor-pointer hover:border-ink/60">
+                  <input
+                    type="radio"
+                    name="provider"
+                    value="mock"
+                    checked={provider === 'mock'}
+                    onChange={() => setProvider('mock')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="text-xs font-semibold text-ink">
+                      Deterministic Mock (Testing &amp; Offline Demo)
+                    </div>
+                    <div className="text-[11px] text-ink-soft mt-0.5">
+                      Demo and testing only. It makes predictable sample papers without calling an AI model.
                     </div>
                   </div>
                 </label>
@@ -248,11 +299,24 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
                     type="text"
                     value={ollamaModel}
                     onChange={(e) => setOllamaModel(e.target.value)}
-                    className="w-full bg-paper px-3 py-2 text-xs text-ink rounded-sm border-b border-sage/60 focus:outline-none focus:border-ink"
+                    className="w-full bg-paper px-3 py-2 text-xs text-ink rounded-sm border-b border-sage/60 focus:outline-none focus:border-ink font-mono"
                   />
-                  <span className="block text-[10px] text-ink-soft mt-1">
-                    Default: qwen2.5:14b-instruct (or mistral, llama3.1)
-                  </span>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {['qwen3:4b', 'qwen2.5:3b', 'qwen2.5:7b', 'qwen2.5:14b-instruct', 'llama3.2:3b'].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setOllamaModel(m)}
+                        className={`text-[10px] px-2 py-0.5 rounded-sm border transition-colors ${
+                          ollamaModel === m
+                            ? 'bg-ink text-ivory border-ink'
+                            : 'bg-paper text-ink-soft border-sage/40 hover:border-ink hover:text-ink'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -270,6 +334,9 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
                     onChange={(e) => setOpenaiAddress(e.target.value)}
                     className="w-full bg-paper px-3 py-2 text-xs text-ink rounded-sm border-b border-sage/60 focus:outline-none focus:border-ink"
                   />
+                  <p className="text-[11px] text-ink-soft mt-1.5 leading-snug">
+                    Use this only when you already have a compatible server. vLLM is software that runs an LLM and exposes an OpenAI-style URL; it is not a model itself and is not required for Setu.
+                  </p>
                 </div>
                 <div>
                   <label htmlFor="openai-model" className="block text-[11px] font-medium text-sage-ink uppercase tracking-label mb-1">
@@ -290,7 +357,7 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
               <div className="space-y-3 mb-6 p-4 bg-paper/60 border border-sage/40 rounded-sm">
                 <div>
                   <label htmlFor="gemini-key" className="block text-[11px] font-medium text-sage-ink uppercase tracking-label mb-1">
-                    Gemini API Key
+                    API Key
                   </label>
                   <input
                     id="gemini-key"
@@ -306,18 +373,57 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
                 </div>
                 <div>
                   <label htmlFor="gemini-model" className="block text-[11px] font-medium text-sage-ink uppercase tracking-label mb-1">
-                    Model
+                    Model name
                   </label>
                   <input
                     id="gemini-model"
                     type="text"
                     value={geminiModel}
                     onChange={(e) => setGeminiModel(e.target.value)}
+                    placeholder="Enter your model name"
                     className="w-full bg-paper px-3 py-2 text-xs text-ink rounded-sm border-b border-sage/60 focus:outline-none focus:border-ink"
                   />
+                  <p className="text-[11px] text-ink-soft mt-1.5 leading-snug">
+                    Enter the exact model name supplied by your provider.
+                  </p>
                 </div>
               </div>
             )}
+
+            <div className="space-y-3 mb-6 p-4 bg-paper/60 border border-sage/40 rounded-sm">
+              <div>
+                <label htmlFor="output-token-limit" className="block text-[11px] font-medium text-sage-ink uppercase tracking-label mb-1">
+                  Maximum response tokens per request
+                </label>
+                <input
+                  id="output-token-limit"
+                  type="number"
+                  min={512}
+                  max={4096}
+                  step={64}
+                  value={maxOutputTokens}
+                  onChange={(e) => setMaxOutputTokens(parseInt(e.target.value, 10) || 512)}
+                  className="w-full bg-paper px-3 py-2 text-xs text-ink rounded-sm border-b border-sage/60 focus:outline-none focus:border-ink"
+                />
+                <p className="text-[11px] text-ink-soft mt-1.5">This is a ceiling, not a fixed cost. Setu automatically uses 640–2,048 tokens depending on the question type.</p>
+              </div>
+              <div>
+                <label htmlFor="context-token-limit" className="block text-[11px] font-medium text-sage-ink uppercase tracking-label mb-1">
+                  Maximum note context per question
+                </label>
+                <input
+                  id="context-token-limit"
+                  type="number"
+                  min={256}
+                  max={8192}
+                  step={128}
+                  value={maxContextTokens}
+                  onChange={(e) => setMaxContextTokens(parseInt(e.target.value, 10) || 256)}
+                  className="w-full bg-paper px-3 py-2 text-xs text-ink rounded-sm border-b border-sage/60 focus:outline-none focus:border-ink"
+                />
+                <p className="text-[11px] text-ink-soft mt-1.5">This is a ceiling. Setu sends 600–1,500 tokens depending on the question type; 1,200 is the balanced default.</p>
+              </div>
+            </div>
 
             {/* Test Connection Result */}
             {testResult && (
@@ -338,7 +444,7 @@ export const ModelSheet: React.FC<ModelSheetProps> = ({ open, onOpenChange }) =>
                 </p>
                 <ol className="list-decimal pl-4 space-y-1 font-mono text-[11px]">
                   <li>Install Ollama from ollama.com</li>
-                  <li>Pull the model: <code className="bg-ivory px-1 rounded">ollama pull qwen2.5:14b-instruct</code></li>
+                  <li>Pull the model: <code className="bg-ivory px-1 rounded">ollama pull qwen3:4b</code></li>
                   <li>
                     If browser blocks requests (CORS), set in PowerShell:
                     <div className="bg-ivory p-1.5 mt-1 rounded text-[10px] break-all">

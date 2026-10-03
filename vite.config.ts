@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+// Vitest's helper extends Vite's configuration type with the `test` block.
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 

@@ -35,6 +35,73 @@ function quoteInChunk(quote: string, chunkText: string): boolean {
   return matchCount / words.length >= 0.7;
 }
 
+function quoteFromChunk(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  return compact.slice(0, 80) || compact;
+}
+
+function rescaleMarks<T extends { marks: number }>(items: T[], total: number): T[] {
+  if (items.length === 0) return items;
+  if (total < items.length) {
+    return [{ ...items[0]!, marks: total }];
+  }
+  const current = items.reduce((sum, item) => sum + item.marks, 0);
+  if (current === total) return items;
+  const next = items.map((item) => ({ ...item }));
+  if (current <= 0) {
+    next[0]!.marks = total;
+    return next;
+  }
+  let allocated = 0;
+  for (let i = 0; i < next.length; i++) {
+    const share = i === next.length - 1
+      ? Math.max(1, total - allocated)
+      : Math.max(1, Math.round((next[i]!.marks / current) * total));
+    next[i]!.marks = share;
+    allocated += share;
+  }
+  const drift = total - next.reduce((sum, item) => sum + item.marks, 0);
+  if (drift !== 0) {
+    const last = next[next.length - 1]!;
+    last.marks = Math.max(1, last.marks + drift);
+  }
+  return next;
+}
+
+/**
+ * Deterministically fix marks, scheme totals, and evidence citations so a
+ * schema-valid model answer is not discarded for copy errors local models make.
+ */
+export function repairQuestionForSlot(
+  q: QuestionOutput,
+  slot: { marks: number; type: string; topic_id?: string; difficulty?: QuestionOutput['difficulty'] },
+  chunks: FileChunk[]
+): QuestionOutput {
+  const repaired: QuestionOutput = {
+    ...q,
+    marks: slot.marks,
+    topic_id: slot.topic_id ?? q.topic_id,
+    difficulty: slot.difficulty ?? q.difficulty,
+    marking_scheme: rescaleMarks(q.marking_scheme, slot.marks),
+    parts: q.parts && q.parts.length > 0 ? rescaleMarks(q.parts, slot.marks) : q.parts,
+  };
+
+  const chunkMap = new Map(chunks.map((chunk) => [chunk.id, chunk]));
+  const grounded = repaired.evidence.filter((ev) => {
+    const chunk = chunkMap.get(ev.chunk_id);
+    return chunk ? quoteInChunk(ev.quote, chunk.text) : false;
+  });
+
+  if (grounded.length === 0 && chunks.length > 0) {
+    const fallback = chunks[0]!;
+    repaired.evidence = [{ chunk_id: fallback.id, quote: quoteFromChunk(fallback.text) }];
+  } else {
+    repaired.evidence = grounded;
+  }
+
+  return repaired;
+}
+
 export function validateQuestion(
   q: QuestionOutput,
   slot: { marks: number; type: string },
@@ -54,10 +121,18 @@ export function validateQuestion(
       errors.push('MCQ must have exactly 4 options');
     } else {
       const keys = q.options.map((o) => o.key);
-      const uniqueKeys = new Set(keys);
-      if (uniqueKeys.size !== 4) errors.push('MCQ options must have distinct keys A/B/C/D');
+      const uniqueKeys = new Set<string>(keys);
+      if (uniqueKeys.size !== 4 || !['A', 'B', 'C', 'D'].every((key) => uniqueKeys.has(key))) {
+        errors.push('MCQ options must have distinct keys A/B/C/D');
+      }
     }
-    if (!q.correct_option) errors.push('MCQ must specify correct_option');
+    if (!q.correct_option || !q.options?.some((option) => option.key === q.correct_option)) {
+      errors.push('MCQ must specify a correct option from A/B/C/D');
+    }
+  }
+
+  if (slot.type === 'case_based' && (!q.passage || !q.parts || q.parts.length < 2)) {
+    errors.push('Case-based question must include a passage and at least two parts');
   }
 
   // Marking scheme sum
@@ -87,10 +162,13 @@ export function validateQuestion(
 
   // Evidence chunk validity
   const chunkMap = new Map(allChunks.map((c) => [c.id, c]));
+  if (q.evidence.length === 0) {
+    errors.push('Question must include at least one evidence quote from the supplied material');
+  }
   q.evidence.forEach((ev) => {
     const chunk = chunkMap.get(ev.chunk_id);
     if (!chunk) {
-      // Don't fail hard on chunk ID mismatch — mock uses different IDs
+      errors.push(`Evidence cites an unknown chunk ${ev.chunk_id}`);
       return;
     }
     if (!quoteInChunk(ev.quote, chunk.text)) {

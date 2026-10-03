@@ -1,54 +1,90 @@
 import type { ZodType } from 'zod';
 import { LLMError } from './types';
-import { extractJson } from './repair';
+import { parseModelJson } from './repair';
 
-const TIMEOUT_MS = 120_000; // 2 minutes per call
+const MAX_ATTEMPTS = 3;
+
+function wasCancelled(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'AbortError' || err.message.toLowerCase().includes('aborted'));
+}
+
+function isTransientTransportError(err: unknown): boolean {
+  if (err instanceof LLMError) return err.retryable;
+  const message = err instanceof Error ? err.message : String(err);
+  return /\b(408|409|425|429|500|502|503|504)\b|high demand|overloaded|temporar|rate limit|network|failed to fetch/i.test(message);
+}
+
+function waitForRetry(attempt: number, signal?: AbortSignal): Promise<void> {
+  const delay = 600 * 2 ** attempt;
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(resolve, delay);
+    signal?.addEventListener('abort', () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('The request was cancelled.', 'AbortError'));
+    }, { once: true });
+  });
+}
 
 /**
- * Shared helper: POST to an endpoint, parse JSON, validate with schema,
- * retry once with JSON repair if parse fails.
+ * Shared helper: call an endpoint, parse JSON, and validate with a schema.
+ * A new completion is requested for transient provider failures and malformed
+ * output. Generation deliberately has no elapsed-time limit: local models can
+ * take several minutes on CPU-only machines.
  */
 export async function callWithRetry<T>(
   fetchFn: (signal: AbortSignal) => Promise<string>,
   schema: ZodType<T>,
   signal?: AbortSignal
 ): Promise<T> {
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
-  const combined = signal
-    ? AbortSignal.any([signal, timeout])
-    : timeout;
+  const activeSignal = signal ?? new AbortController().signal;
+  let lastError: unknown;
 
-  let rawText: string;
-  try {
-    rawText = await fetchFn(combined);
-  } catch (err) {
-    if (err instanceof Error && err.name === 'TimeoutError') {
-      throw new LLMError('llm_timeout', 'The model took too long to respond. Try a shorter prompt or a faster model.');
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const rawText = await fetchFn(activeSignal);
+      if (!rawText.trim()) {
+        throw new LLMError('llm_bad_output', 'The model returned an empty response.');
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = parseModelJson(rawText);
+      } catch {
+        throw new LLMError('llm_bad_output', 'The model returned incomplete or invalid JSON.');
+      }
+
+      const result = schema.safeParse(parsed);
+      if (result.success) return result.data;
+      throw new LLMError('llm_bad_output', 'The model returned JSON that did not match the requested format.');
+    } catch (err) {
+      if (wasCancelled(err)) throw err;
+      lastError = err;
+      const retryable = err instanceof LLMError
+        ? err.code === 'llm_bad_output' || err.retryable
+        : isTransientTransportError(err);
+      if (!retryable || attempt === MAX_ATTEMPTS - 1) break;
+      await waitForRetry(attempt, signal);
     }
-    if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
-      throw err; // re-throw cancellation
-    }
-    throw new LLMError('llm_unreachable', `Cannot reach the model endpoint: ${err instanceof Error ? err.message : String(err)}`, err);
   }
 
-  // First attempt: direct parse
-  try {
-    const parsed = JSON.parse(rawText) as unknown;
-    const result = schema.safeParse(parsed);
-    if (result.success) return result.data;
-  } catch {
-    // fall through to repair
+  if (lastError instanceof LLMError && lastError.code === 'llm_bad_output') {
+    throw new LLMError(
+      'llm_bad_output',
+      `The model could not produce a complete valid response after ${MAX_ATTEMPTS} attempts. Increase “Maximum response tokens” to at least 3,072, then retry.`,
+      lastError
+    );
   }
-
-  // Second attempt: extract and repair
-  try {
-    const repaired = extractJson(rawText);
-    const parsed = JSON.parse(repaired) as unknown;
-    const result = schema.safeParse(parsed);
-    if (result.success) return result.data;
-    throw new LLMError('llm_bad_output', `Model output did not match expected schema: ${result.error.message}`);
-  } catch (err) {
-    if (err instanceof LLMError) throw err;
-    throw new LLMError('llm_bad_output', `Could not parse model output as JSON. Raw: ${rawText.slice(0, 200)}`);
+  if (lastError instanceof LLMError && lastError.retryable) {
+    throw new LLMError(
+      lastError.code,
+      `The model is still temporarily busy after ${MAX_ATTEMPTS} attempts. Wait a minute, then retry.`,
+      lastError
+    );
   }
+  if (lastError instanceof LLMError) throw lastError;
+  throw new LLMError(
+    'llm_unreachable',
+    'Cannot reach the model endpoint. Check the model connection and try again.',
+    lastError
+  );
 }

@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { runLocalOCR } from './ocr';
 import { cleanExtractedText } from './clean';
 import { chunkDocument } from './chunk';
@@ -59,7 +59,7 @@ export async function extractPDF(
         if (context) {
           canvas.height = viewport.height;
           canvas.width = viewport.width;
-          await page.render({ canvasContext: context, viewport }).promise;
+          await page.render({ canvas, canvasContext: context, viewport }).promise;
           const ocrText = await runLocalOCR(canvas);
           if (ocrText.trim().length > pageRawText.trim().length) {
             pageRawText = ocrText;

@@ -16,12 +16,24 @@ function buildMockQuestion(
   chunks: FileChunk[]
 ): Record<string, unknown> {
   const evidenceChunk = chunks[slotIndex % Math.max(chunks.length, 1)];
+  const focus = [
+    'central meaning and key terminology',
+    'main features and defining characteristics',
+    'underlying mechanism and sequence of events',
+    'worked example in a familiar situation',
+    'similarities differences and points of contrast',
+    'practical application in a new scenario',
+    'steps calculations and quantitative relationships',
+    'data interpretation and evidence-based conclusion',
+    'strengths limitations and reasoned evaluation',
+    'overall significance and connected ideas',
+  ][slotIndex % 10];
   const quote = evidenceChunk
     ? evidenceChunk.text.slice(0, 80).replace(/\n/g, ' ')
     : 'From your syllabus material.';
 
   const base = {
-    stem: `Explain the concept of ${topicId.replace(/_/g, ' ')} in the context of your course material.`,
+    stem: `Explain the ${focus} of ${topicId.replace(/_/g, ' ')} using the supplied course content.`,
     marks,
     difficulty,
     topic_id: topicId,
@@ -41,7 +53,7 @@ function buildMockQuestion(
   if (type === 'mcq') {
     return {
       ...base,
-      stem: `Which of the following best describes ${topicId.replace(/_/g, ' ')}?`,
+      stem: `Which option best states the ${focus} of ${topicId.replace(/_/g, ' ')}?`,
       marks: 1,
       marking_scheme: [{ point: 'Correct option selected', marks: 1 }],
       options: [
@@ -72,11 +84,12 @@ function buildMockQuestion(
 export function createMockClient(chunks: FileChunk[]) {
   return {
     async generate<T>(
-      _prompt: string,
+      prompt: string,
       schema: ZodType<T>,
       schemaName: string,
       _options: LLMOptions = {}
     ): Promise<T> {
+      void _options;
       // Simulate a small delay
       await new Promise<void>((resolve) => setTimeout(resolve, 200));
 
@@ -119,14 +132,22 @@ export function createMockClient(chunks: FileChunk[]) {
 
       // For question generation
       if (schemaName.startsWith('Question_')) {
-        const parts = schemaName.split('_');
-        const type = parts[1] ?? 'short';
-        const marks = parseInt(parts[2] ?? '3', 10);
-        const difficulty = parts[3] ?? 'medium';
-        const topicId = parts[4] ?? 'topic_1_1';
-        const slotIndex = parseInt(parts[5] ?? '0', 10);
+        const match = schemaName.match(
+          /^Question_(case_based|exam_style|mcq|short|long|application|analytical)_(\d+)_(easy|medium|hard)_(.+)_slot_(\d+)$/
+        );
+        const type = match?.[1] ?? 'short';
+        const marks = parseInt(match?.[2] ?? '3', 10);
+        const difficulty = match?.[3] ?? 'medium';
+        const topicId = match?.[4] ?? 'topic_1_1';
+        const slotIndex = parseInt(match?.[5] ?? '0', 10);
 
-        const q = buildMockQuestion(slotIndex, type, marks, difficulty, topicId, chunks);
+        // Match the production contract: evidence may only cite chunks passed
+        // in this question's MATERIAL block, not an unrelated syllabus chunk.
+        const materialIds = [...prompt.matchAll(/\[chunk_id:\s*([^\]]+)\]/g)].map((match) => match[1]);
+        const contextChunks = materialIds.length > 0
+          ? chunks.filter((chunk) => materialIds.includes(chunk.id))
+          : chunks;
+        const q = buildMockQuestion(slotIndex, type, marks, difficulty, topicId, contextChunks);
         const r = schema.safeParse(q);
         if (r.success) return r.data;
         // Return partial mock that passes
