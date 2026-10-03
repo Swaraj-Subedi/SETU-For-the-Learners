@@ -1,0 +1,39 @@
+COURSE SYLLABUS: ADVANCED MODERN PHYSICS
+Course Code: PHYS-301
+Credit Hours: 4
+Total Marks: 100
+
+UNIT 1: SPECIAL RELATIVITY (Weight: 25 marks)
+Topics:
+1.1 Michelson-Morley experiment and the constancy of the speed of light.
+1.2 Lorentz transformations, length contraction, time dilation, and simultaneity.
+1.3 Relativistic momentum, energy, and mass-energy equivalence (E = mc^2).
+Learning Outcomes:
+- Calculate Lorentz factor gamma and apply relativistic addition of velocities.
+- Derive energy-momentum relation E^2 = (pc)^2 + (m0 c^2)^2.
+
+UNIT 2: QUANTUM FOUNDATIONS AND WAVE MECHANICS (Weight: 35 marks)
+Topics:
+2.1 Photoelectric effect and Compton scattering.
+2.2 De Broglie wavelength, matter waves, and wave packets.
+2.3 Heisenberg uncertainty principle (position-momentum, energy-time).
+2.4 Time-independent Schrodinger equation in 1D; infinite square well.
+Learning Outcomes:
+- Solve 1D infinite potential well for energy eigenvalues and eigenfunctions.
+- Interpret wave function normalization and probability density.
+
+UNIT 3: ATOMIC STRUCTURE AND SPECTROSCOPY (Weight: 25 marks)
+Topics:
+3.1 Bohr model of hydrogen and Rydberg formula.
+3.2 Orbital angular momentum, electron spin, and Pauli exclusion principle.
+3.3 Zeeman effect and fine structure.
+Learning Outcomes:
+- Predict spectral emission lines for hydrogenic atoms.
+- Apply Hund's rules to determine ground state electronic configurations.
+
+UNIT 4: NUCLEAR AND PARTICLE PHYSICS (Weight: 15 marks)
+Topics:
+4.1 Nuclear binding energy, mass defect, and liquid drop model.
+4.2 Radioactive decay law, alpha, beta, and gamma emissions.
+Learning Outcomes:
+- Calculate nuclear Q-values and half-life decay constants.

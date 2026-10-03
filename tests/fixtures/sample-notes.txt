@@ -1,0 +1,27 @@
+STUDY NOTES: MODERN PHYSICS (PHYS-301)
+
+SECTION 1: RELATIVITY
+In 1905, Albert Einstein proposed the special theory of relativity based on two postulates:
+1. The laws of physics are invariant in all inertial reference frames.
+2. The speed of light in vacuum is identical for all observers regardless of motion of source or observer.
+The Lorentz factor is defined as gamma = 1 / sqrt(1 - v^2 / c^2).
+Length contraction occurs only along the direction of motion: L = L0 / gamma.
+Time dilation states that moving clocks run slow: Delta t = gamma * Delta t0.
+The total relativistic energy is E = gamma * m0 * c^2 = K + m0 * c^2.
+Momentum is p = gamma * m0 * v.
+Squaring and subtracting yields the invariant relation: E^2 = (p*c)^2 + (m0*c^2)^2.
+For massless particles like photons, m0 = 0, so E = p * c.
+
+SECTION 2: QUANTUM PHENOMENA
+Photoelectric effect: Light incident on metal surfaces ejects electrons only if photon energy h*f exceeds work function Phi.
+Maximum kinetic energy K_max = h*f - Phi.
+Compton scattering: When X-rays scatter from stationary electrons, the shift in wavelength is Delta lambda = (h / (m_e * c)) * (1 - cos(theta)).
+The Compton wavelength of an electron is lambda_c = h / (m_e * c) = 2.426 pm.
+De Broglie hypothesis: Any particle with momentum p has an associated matter wavelength lambda = h / p.
+Uncertainty Principle: Delta x * Delta p >= hbar / 2, where hbar = h / (2 * pi).
+Similarly, Delta E * Delta t >= hbar / 2.
+Schrodinger Equation in 1D: (-hbar^2 / (2m)) * d^2 psi / dx^2 + V(x) * psi = E * psi.
+For an infinite potential well of width L (0 <= x <= L), boundary conditions require psi(0) = psi(L) = 0.
+The normalized wavefunctions are psi_n(x) = sqrt(2/L) * sin(n * pi * x / L).
+Energy eigenvalues are E_n = (n^2 * pi^2 * hbar^2) / (2 * m * L^2), where n = 1, 2, 3...
+The ground state energy (n=1) is strictly non-zero, consistent with uncertainty principle.

@@ -1,0 +1,77 @@
+/* Print styles for Setu typeset practice papers */
+
+@page {
+  size: A4;
+  margin: 20mm 18mm 22mm;
+}
+
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #14201a !important;
+    font-family: 'Newsreader', 'Georgia', serif !important;
+    font-size: 11pt !important;
+    line-height: 1.45 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide entire interactive UI */
+  .no-print,
+  nav,
+  header.app-header,
+  footer.app-footer,
+  aside,
+  button,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Show dedicated printable paper container */
+  .printable-paper-root {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .question-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 1.5rem;
+  }
+
+  .section-heading {
+    break-after: avoid;
+    page-break-after: avoid;
+    font-feature-settings: 'smcp';
+    font-variant: small-caps;
+    border-bottom: 1px solid #14201a;
+    padding-bottom: 4px;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .answer-lines {
+    background-image: repeating-linear-gradient(
+      transparent,
+      transparent 22px,
+      #d1d5db 22px,
+      #d1d5db 23px
+    );
+  }
+
+  .page-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  p, div, li {
+    orphans: 3;
+    widows: 3;
+  }
+}
+
+@media screen {
+  .printable-paper-root {
+    display: none;
+  }
+}
